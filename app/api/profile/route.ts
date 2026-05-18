@@ -5,7 +5,9 @@ import {
   calculateProteinTarget,
   calculateWaterTarget,
 } from "@/lib/utils";
-import type { ActivityLevel, Goal } from "@/lib/supabase/types";
+import type { ActivityLevel, Goal, Profile } from "@/lib/supabase/types";
+
+type ProfileUpdate = Partial<Omit<Profile, "id" | "created_at" | "updated_at">>;
 
 const ALLOWED_FIELDS = [
   "display_name", "age", "height_cm", "weight_kg",
@@ -35,7 +37,7 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
 
   // Only pass known profile columns — prevents stray fields (e.g. error) from reaching Supabase
-  const updateData: Record<string, unknown> = {};
+  const updateData: ProfileUpdate = {};
   for (const field of ALLOWED_FIELDS) {
     if (field in body) updateData[field] = body[field];
   }
