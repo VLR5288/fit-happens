@@ -147,6 +147,11 @@ export default function LogFoodPage() {
     }
   }
 
+  async function deleteFavourite(fav: FavouriteFood) {
+    setFavourites((prev) => prev.filter((f) => f.id !== fav.id));
+    await fetch(`/api/favourite-foods/${fav.id}`, { method: "DELETE" });
+  }
+
   async function logFavourite(fav: FavouriteFood) {
     setFavLogging(fav.id);
     try {
@@ -185,19 +190,27 @@ export default function LogFoodPage() {
           <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Quick add</p>
           <div className="flex flex-wrap gap-2">
             {favourites.map((fav) => (
-              <button
-                key={fav.id}
-                onClick={() => logFavourite(fav)}
-                disabled={favLogging === fav.id}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                  favLoggedId === fav.id
-                    ? "bg-emerald-500 border-emerald-500 text-white"
-                    : "bg-slate-800 border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-400"
-                }`}
-              >
-                {favLoggedId === fav.id ? "✓ Logged" : `⭐ ${fav.name}`}
-                <span className="ml-1.5 text-slate-500 text-xs">{fav.calories} kcal</span>
-              </button>
+              <div key={fav.id} className={`flex items-center rounded-full border text-sm font-medium transition-colors ${
+                favLoggedId === fav.id
+                  ? "bg-emerald-500 border-emerald-500 text-white"
+                  : "bg-slate-800 border-slate-700 text-slate-300"
+              }`}>
+                <button
+                  onClick={() => logFavourite(fav)}
+                  disabled={favLogging === fav.id}
+                  className="pl-3 pr-2 py-1.5 hover:text-emerald-400 disabled:opacity-50 transition-colors"
+                >
+                  {favLoggedId === fav.id ? "✓ Logged" : `⭐ ${fav.name}`}
+                  <span className="ml-1.5 text-xs opacity-60">{fav.calories} kcal</span>
+                </button>
+                <button
+                  onClick={() => deleteFavourite(fav)}
+                  className="pr-2.5 pl-0.5 py-1.5 text-slate-500 hover:text-red-400 transition-colors"
+                  aria-label={`Remove ${fav.name} from favourites`}
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         </div>
