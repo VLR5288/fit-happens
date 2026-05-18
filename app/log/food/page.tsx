@@ -1,30 +1,56 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { FoodAnalysisResult } from "@/lib/anthropic";
+import type { FavouriteFood } from "@/lib/supabase/types";
 import { MEAL_TYPES } from "@/lib/constants";
 
 export default function LogFoodPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [mealType, setMealType] = useState("lunch");
+
+  // Photo path
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [mealType, setMealType] = useState<string>("lunch");
+
+  // Text path
+  const [textDescription, setTextDescription] = useState("");
+
+  // Shared
   const [analysis, setAnalysis] = useState<FoodAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [logSaved, setLogSaved] = useState(false);
   const [error, setError] = useState("");
+
+  // Favourites
+  const [favourites, setFavourites] = useState<FavouriteFood[]>([]);
+  const [savedFavIds, setSavedFavIds] = useState<Set<string>>(new Set());
+  const [favLogging, setFavLogging] = useState<string | null>(null);
+  const [favLoggedId, setFavLoggedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/favourite-foods")
+      .then((r) => r.json())
+      .then((d) => Array.isArray(d) && setFavourites(d))
+      .catch(() => null);
+  }, []);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     setFile(f);
     setAnalysis(null);
+    setLogSaved(false);
     setError("");
     const reader = new FileReader();
     reader.onloadend = () => setPreview(reader.result as string);
     reader.readAsDataURL(f);
+    // Clear text path
+    setTextDescription("");
   }
 
   async function analyzePhoto() {
@@ -37,6 +63,30 @@ export default function LogFoodPage() {
       const res = await fetch("/api/food-log/analyze", { method: "POST", body: fd });
       if (!res.ok) throw new Error(await res.text());
       setAnalysis(await res.json());
+      setLogSaved(false);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Analysis failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function analyzeText() {
+    if (!textDescription.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/food-log/analyze-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: textDescription.trim() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setAnalysis(await res.json());
+      setLogSaved(false);
+      // Clear photo path
+      setFile(null);
+      setPreview(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Analysis failed");
     } finally {
@@ -64,11 +114,61 @@ export default function LogFoodPage() {
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      router.push("/dashboard");
+      setLogSaved(true);
+      setSavedFavIds(new Set());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveFavourite(food: FoodAnalysisResult["foods"][number]) {
+    const key = food.name;
+    try {
+      const res = await fetch("/api/favourite-foods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: food.name,
+          calories: food.calories,
+          protein_g: food.protein_g,
+          fibre_g: food.fibre_g,
+          carbs_g: food.carbs_g,
+          fat_g: food.fat_g,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const saved: FavouriteFood = await res.json();
+      setSavedFavIds((prev) => new Set(prev).add(key));
+      setFavourites((prev) => [saved, ...prev]);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not save favourite");
+    }
+  }
+
+  async function logFavourite(fav: FavouriteFood) {
+    setFavLogging(fav.id);
+    try {
+      const res = await fetch(`/api/favourite-foods/${fav.id}/use`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meal_type: mealType }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setFavLoggedId(fav.id);
+      // Update usage_count locally so order feels correct on next load
+      setFavourites((prev) =>
+        prev.map((f) => f.id === fav.id ? { ...f, usage_count: f.usage_count + 1 } : f)
+      );
+      setTimeout(() => {
+        setFavLoggedId(null);
+        router.push("/dashboard");
+      }, 800);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Log failed");
+    } finally {
+      setFavLogging(null);
     }
   }
 
@@ -78,6 +178,30 @@ export default function LogFoodPage() {
         <button onClick={() => router.back()} className="text-slate-400 hover:text-slate-200">←</button>
         <h1 className="text-xl font-bold">Log Meal</h1>
       </div>
+
+      {/* Favourites quick-tap */}
+      {favourites.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Quick add</p>
+          <div className="flex flex-wrap gap-2">
+            {favourites.map((fav) => (
+              <button
+                key={fav.id}
+                onClick={() => logFavourite(fav)}
+                disabled={favLogging === fav.id}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                  favLoggedId === fav.id
+                    ? "bg-emerald-500 border-emerald-500 text-white"
+                    : "bg-slate-800 border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-400"
+                }`}
+              >
+                {favLoggedId === fav.id ? "✓ Logged" : `⭐ ${fav.name}`}
+                <span className="ml-1.5 text-slate-500 text-xs">{fav.calories} kcal</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Meal type selector */}
       <div className="flex gap-2 flex-wrap">
@@ -130,6 +254,33 @@ export default function LogFoodPage() {
         </button>
       )}
 
+      {/* Text description input */}
+      {!analysis && (
+        <div className="space-y-2">
+          <label className="block text-sm text-slate-400">Or describe a food item instead</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={textDescription}
+              onChange={(e) => {
+                setTextDescription(e.target.value);
+                setError("");
+              }}
+              onKeyDown={(e) => e.key === "Enter" && analyzeText()}
+              placeholder="e.g. black coffee, 2 eggs, greek yogurt"
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              onClick={analyzeText}
+              disabled={loading || !textDescription.trim()}
+              className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-semibold rounded-xl text-sm whitespace-nowrap"
+            >
+              {loading ? "..." : "Analyse"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
       {/* Analysis results */}
@@ -170,13 +321,47 @@ export default function LogFoodPage() {
             </div>
           )}
 
-          <button
-            onClick={saveLog}
-            disabled={saving}
-            className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold rounded-xl"
-          >
-            {saving ? "Saving..." : "Save meal log"}
-          </button>
+          {!logSaved ? (
+            <button
+              onClick={saveLog}
+              disabled={saving}
+              className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold rounded-xl"
+            >
+              {saving ? "Saving..." : "Save meal log"}
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-center text-emerald-400 text-sm font-medium">Meal logged!</p>
+
+              {/* Save as favourite buttons — one per food item */}
+              <div className="space-y-2">
+                {analysis.foods.map((food, i) => {
+                  const saved = savedFavIds.has(food.name);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => !saved && saveFavourite(food)}
+                      disabled={saved}
+                      className={`w-full py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                        saved
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 cursor-default"
+                          : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-amber-500"
+                      }`}
+                    >
+                      {saved ? `⭐ Saved "${food.name}"` : `Save "${food.name}" as favourite ⭐`}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold rounded-xl"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

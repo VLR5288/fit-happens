@@ -103,6 +103,20 @@ export type DailyNote = {
   updated_at: string;
 };
 
+export type FavouriteFood = {
+  id: string;
+  user_id: string;
+  name: string;
+  calories: number;
+  protein_g: number;
+  fibre_g: number;
+  carbs_g: number;
+  fat_g: number;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -146,6 +160,12 @@ export type Database = {
         Row: DailyNote;
         Insert: Omit<DailyNote, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<DailyNote, "id" | "user_id" | "created_at" | "updated_at">>;
+        Relationships: [];
+      };
+      favourite_foods: {
+        Row: FavouriteFood;
+        Insert: Omit<FavouriteFood, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<FavouriteFood, "id" | "user_id" | "created_at" | "updated_at">>;
         Relationships: [];
       };
     };

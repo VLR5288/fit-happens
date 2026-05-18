@@ -87,6 +87,56 @@ Return ONLY valid JSON matching this exact structure:
   return JSON.parse(jsonMatch[0]) as FoodAnalysisResult;
 }
 
+export async function analyzeFoodText(
+  description: string,
+  userProfile?: { calorie_target?: number | null; protein_target_g?: number | null }
+): Promise<FoodAnalysisResult> {
+  const contextNote = userProfile?.calorie_target
+    ? `The user's daily calorie target is ${userProfile.calorie_target} kcal and protein target is ${userProfile.protein_target_g}g.`
+    : "";
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: `Estimate the macros for this food item: "${description}". ${contextNote}
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "foods": [
+    {
+      "name": "food item name",
+      "estimated_portion": "e.g. 150g or 1 cup",
+      "calories": 0,
+      "protein_g": 0,
+      "fibre_g": 0,
+      "carbs_g": 0,
+      "fat_g": 0
+    }
+  ],
+  "total_calories": 0,
+  "total_protein_g": 0,
+  "total_fibre_g": 0,
+  "total_carbs_g": 0,
+  "total_fat_g": 0,
+  "prep_method": "describe preparation method if relevant, otherwise 'n/a'",
+  "suggestion": "one actionable tip to improve the meal's nutritional balance"
+}`,
+      },
+    ],
+  });
+
+  const content = message.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+  const jsonMatch = content.text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No JSON found in Claude response");
+
+  return JSON.parse(jsonMatch[0]) as FoodAnalysisResult;
+}
+
 export async function getDailySuggestion(summary: {
   calories_consumed: number;
   calorie_target: number;
