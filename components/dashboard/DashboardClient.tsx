@@ -5,7 +5,24 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ProgressRing from "@/components/ui/ProgressRing";
 import type { Profile } from "@/lib/supabase/types";
-import type { DayData } from "@/app/dashboard/page";
+
+// Defined locally to avoid importing from a server component file
+interface DayData {
+  date: string;
+  dayLabel: string;
+  calories: number;
+  protein_g: number;
+  fibre_g: number;
+  water_ml: number;
+}
+
+interface TodayMeal {
+  id: string;
+  logged_at: string;
+  meal_type: string;
+  calories: number | null;
+  foods: string[];
+}
 
 interface Props {
   profile: Profile | null;
@@ -15,6 +32,21 @@ interface Props {
   todayWater: number;
   todayActivityMin: number;
   weeklyData: DayData[];
+  todayMeals: TodayMeal[];
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-AU", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function foodSummary(foods: string[]): string {
+  if (foods.length === 0) return "Meal";
+  if (foods.length <= 3) return foods.join(", ");
+  return foods.slice(0, 3).join(", ") + ` & ${foods.length - 3} more`;
 }
 
 export default function DashboardClient({
@@ -25,6 +57,7 @@ export default function DashboardClient({
   todayWater,
   todayActivityMin,
   weeklyData,
+  todayMeals,
 }: Props) {
   const router = useRouter();
   const [greeting, setGreeting] = useState("Good day");
@@ -123,6 +156,50 @@ export default function DashboardClient({
         </div>
       </div>
 
+      {/* Today's meals */}
+      <div className="card space-y-3">
+        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Today&apos;s meals</h2>
+
+        {todayMeals.length === 0 ? (
+          <Link
+            href="/log/food"
+            className="flex items-center gap-3 py-1 group"
+          >
+            <span className="text-2xl">🍽️</span>
+            <div>
+              <p className="text-sm text-slate-300 group-hover:text-emerald-400 transition-colors">No meals logged yet</p>
+              <p className="text-xs text-slate-500">Tap to log your first meal today</p>
+            </div>
+            <span className="ml-auto text-slate-600 group-hover:text-emerald-500 transition-colors">→</span>
+          </Link>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {todayMeals.map((meal) => (
+                <div key={meal.id} className="flex items-start gap-3">
+                  <span className="text-xs text-slate-500 mt-0.5 w-16 shrink-0 tabular-nums">
+                    {formatTime(meal.logged_at)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-200 capitalize">{meal.meal_type}</p>
+                    <p className="text-xs text-slate-400 truncate">{foodSummary(meal.foods)}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-amber-400 shrink-0">
+                    {meal.calories ?? 0} kcal
+                  </span>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/log/food"
+              className="block text-center text-xs text-emerald-400 hover:text-emerald-300 font-medium pt-1"
+            >
+              + Log another meal
+            </Link>
+          </>
+        )}
+      </div>
+
       {/* 7-day summary */}
       <div className="card space-y-3">
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">7-day summary</h2>
@@ -130,11 +207,11 @@ export default function DashboardClient({
         {weekMetrics.map((metric) => (
           <div key={metric.key} className="flex items-center gap-2">
             <span className="w-7 text-xs text-slate-500 shrink-0">{metric.label}</span>
-            <div className="flex-1 flex items-end gap-1" style={{ height: 36 }}>
+            <div className="flex-1 flex items-end gap-1" style={{ height: "36px" }}>
               {weeklyData.map((day) => {
                 const val = day[metric.key] ?? 0;
                 const pct = metric.target > 0 ? Math.min(val / metric.target, 1) : 0;
-                const barHeight = val > 0 ? Math.max(pct * 36, 3) : 1;
+                const barHeight = val > 0 ? Math.max(pct * 36, 4) : 2;
                 return (
                   <div
                     key={day.date}
@@ -142,8 +219,8 @@ export default function DashboardClient({
                     title={`${day.dayLabel}: ${Math.round(val)}`}
                   >
                     <div
-                      className={`w-full rounded-sm ${metric.color} ${val > 0 ? "opacity-80" : "opacity-10"}`}
-                      style={{ height: barHeight }}
+                      className={`w-full rounded-sm ${metric.color} ${val > 0 ? "opacity-80" : "opacity-15"}`}
+                      style={{ height: `${barHeight}px` }}
                     />
                   </div>
                 );

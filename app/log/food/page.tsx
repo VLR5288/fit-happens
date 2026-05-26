@@ -382,29 +382,35 @@ export default function LogFoodPage() {
         ))}
       </div>
 
-      {/* Photo picker */}
-      <div
-        onClick={() => fileInputRef.current?.click()}
-        className="card border-dashed border-2 border-slate-600 hover:border-emerald-500 cursor-pointer flex flex-col items-center justify-center min-h-48 transition-colors"
-      >
-        {preview ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview} alt="meal preview" className="w-full rounded-xl object-cover max-h-64" />
-        ) : (
-          <>
-            <span className="text-4xl mb-2">📸</span>
-            <p className="text-slate-400 text-sm">Tap to take or choose a photo</p>
-          </>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          capture="environment"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-      </div>
+      {/* Photo picker — hidden after text analysis (no preview); compact after photo analysis */}
+      {(!analysis || preview) && (
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className={`card border-dashed border-2 border-slate-600 hover:border-emerald-500 cursor-pointer flex flex-col items-center justify-center transition-colors ${!analysis ? "min-h-48" : ""}`}
+        >
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={preview}
+              alt="meal preview"
+              className={`w-full rounded-xl object-cover ${analysis ? "max-h-36" : "max-h-64"}`}
+            />
+          ) : (
+            <>
+              <span className="text-4xl mb-2">📸</span>
+              <p className="text-slate-400 text-sm">Tap to take or choose a photo</p>
+            </>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </div>
+      )}
 
       {file && !analysis && (
         <button
