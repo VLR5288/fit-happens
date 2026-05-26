@@ -6,6 +6,50 @@ import type { FoodAnalysisResult } from "@/lib/anthropic";
 import type { FavouriteFood } from "@/lib/supabase/types";
 import { MEAL_TYPES } from "@/lib/constants";
 
+interface EditableFood {
+  name: string;
+  qty: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  fibre_g: number;
+  carbs_g: number;
+  fat_g: number;
+  calsPerUnit: number;
+  proteinPerUnit: number;
+  fibrePerUnit: number;
+  carbsPerUnit: number;
+  fatPerUnit: number;
+}
+
+function parsePortion(portion: string): { qty: number; unit: string } {
+  const match = portion.match(/^(\d+(?:\.\d+)?)\s*(.*)/);
+  if (match) return { qty: parseFloat(match[1]), unit: match[2].trim() };
+  return { qty: 1, unit: portion };
+}
+
+function toEditable(foods: FoodAnalysisResult["foods"]): EditableFood[] {
+  return foods.map((f) => {
+    const { qty, unit } = parsePortion(f.estimated_portion);
+    const safeQty = qty > 0 ? qty : 1;
+    return {
+      name: f.name,
+      qty: safeQty,
+      unit,
+      calories: f.calories,
+      protein_g: f.protein_g,
+      fibre_g: f.fibre_g,
+      carbs_g: f.carbs_g,
+      fat_g: f.fat_g,
+      calsPerUnit: f.calories / safeQty,
+      proteinPerUnit: f.protein_g / safeQty,
+      fibrePerUnit: f.fibre_g / safeQty,
+      carbsPerUnit: f.carbs_g / safeQty,
+      fatPerUnit: f.fat_g / safeQty,
+    };
+  });
+}
+
 export default function LogFoodPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -25,6 +69,12 @@ export default function LogFoodPage() {
   const [saving, setSaving] = useState(false);
   const [logSaved, setLogSaved] = useState(false);
   const [error, setError] = useState("");
+
+  // Edit mode
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedFoods, setEditedFoods] = useState<EditableFood[]>([]);
+  const [editedPrepMethod, setEditedPrepMethod] = useState("");
+  const [newFood, setNewFood] = useState({ name: "", portion: "", calories: "" });
 
   // Favourites
   const [favourites, setFavourites] = useState<FavouriteFood[]>([]);
@@ -49,7 +99,6 @@ export default function LogFoodPage() {
     const reader = new FileReader();
     reader.onloadend = () => setPreview(reader.result as string);
     reader.readAsDataURL(f);
-    // Clear text path
     setTextDescription("");
   }
 
@@ -84,7 +133,6 @@ export default function LogFoodPage() {
       if (!res.ok) throw new Error(await res.text());
       setAnalysis(await res.json());
       setLogSaved(false);
-      // Clear photo path
       setFile(null);
       setPreview(null);
     } catch (e: unknown) {
@@ -92,6 +140,99 @@ export default function LogFoodPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function startEditing() {
+    if (!analysis) return;
+    setEditedFoods(toEditable(analysis.foods));
+    setEditedPrepMethod(analysis.prep_method);
+    setNewFood({ name: "", portion: "", calories: "" });
+    setIsEditing(true);
+  }
+
+  function updateFoodName(idx: number, name: string) {
+    setEditedFoods((prev) => prev.map((f, i) => (i === idx ? { ...f, name } : f)));
+  }
+
+  function updateQty(idx: number, rawQty: string) {
+    const qty = parseFloat(rawQty) || 0;
+    setEditedFoods((prev) =>
+      prev.map((f, i) => {
+        if (i !== idx) return f;
+        return {
+          ...f,
+          qty,
+          calories: Math.round(f.calsPerUnit * qty),
+          protein_g: Math.round(f.proteinPerUnit * qty * 10) / 10,
+          fibre_g: Math.round(f.fibrePerUnit * qty * 10) / 10,
+          carbs_g: Math.round(f.carbsPerUnit * qty * 10) / 10,
+          fat_g: Math.round(f.fatPerUnit * qty * 10) / 10,
+        };
+      })
+    );
+  }
+
+  function removeFood(idx: number) {
+    setEditedFoods((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function addNewFood() {
+    const name = newFood.name.trim() || "Unknown food";
+    const portion = parseFloat(newFood.portion) || 100;
+    const cals = parseInt(newFood.calories) || 0;
+    setEditedFoods((prev) => [
+      ...prev,
+      {
+        name,
+        qty: portion,
+        unit: "g",
+        calories: cals,
+        protein_g: 0,
+        fibre_g: 0,
+        carbs_g: 0,
+        fat_g: 0,
+        calsPerUnit: portion > 0 ? cals / portion : cals,
+        proteinPerUnit: 0,
+        fibrePerUnit: 0,
+        carbsPerUnit: 0,
+        fatPerUnit: 0,
+      },
+    ]);
+    setNewFood({ name: "", portion: "", calories: "" });
+  }
+
+  function applyEdits() {
+    if (!analysis) return;
+    const updatedFoods = editedFoods.map((f) => ({
+      name: f.name,
+      estimated_portion: `${f.qty}${f.unit ? " " + f.unit : ""}`.trim(),
+      calories: f.calories,
+      protein_g: f.protein_g,
+      fibre_g: f.fibre_g,
+      carbs_g: f.carbs_g,
+      fat_g: f.fat_g,
+    }));
+    const totals = editedFoods.reduce(
+      (acc, f) => ({
+        calories: acc.calories + f.calories,
+        protein_g: acc.protein_g + f.protein_g,
+        fibre_g: acc.fibre_g + f.fibre_g,
+        carbs_g: acc.carbs_g + f.carbs_g,
+        fat_g: acc.fat_g + f.fat_g,
+      }),
+      { calories: 0, protein_g: 0, fibre_g: 0, carbs_g: 0, fat_g: 0 }
+    );
+    setAnalysis({
+      ...analysis,
+      foods: updatedFoods,
+      total_calories: Math.round(totals.calories),
+      total_protein_g: Math.round(totals.protein_g * 10) / 10,
+      total_fibre_g: Math.round(totals.fibre_g * 10) / 10,
+      total_carbs_g: Math.round(totals.carbs_g * 10) / 10,
+      total_fat_g: Math.round(totals.fat_g * 10) / 10,
+      prep_method: editedPrepMethod,
+    });
+    setIsEditing(false);
   }
 
   async function saveLog() {
@@ -162,9 +303,8 @@ export default function LogFoodPage() {
       });
       if (!res.ok) throw new Error(await res.text());
       setFavLoggedId(fav.id);
-      // Update usage_count locally so order feels correct on next load
       setFavourites((prev) =>
-        prev.map((f) => f.id === fav.id ? { ...f, usage_count: f.usage_count + 1 } : f)
+        prev.map((f) => (f.id === fav.id ? { ...f, usage_count: f.usage_count + 1 } : f))
       );
       setTimeout(() => {
         setFavLoggedId(null);
@@ -190,11 +330,14 @@ export default function LogFoodPage() {
           <p className="text-xs text-slate-400 uppercase tracking-wide font-medium">Quick add</p>
           <div className="flex flex-wrap gap-2">
             {favourites.map((fav) => (
-              <div key={fav.id} className={`flex items-center rounded-full border text-sm font-medium transition-colors ${
-                favLoggedId === fav.id
-                  ? "bg-emerald-500 border-emerald-500 text-white"
-                  : "bg-slate-800 border-slate-700 text-slate-300"
-              }`}>
+              <div
+                key={fav.id}
+                className={`flex items-center rounded-full border text-sm font-medium transition-colors ${
+                  favLoggedId === fav.id
+                    ? "bg-emerald-500 border-emerald-500 text-white"
+                    : "bg-slate-800 border-slate-700 text-slate-300"
+                }`}
+              >
                 <button
                   onClick={() => logFavourite(fav)}
                   disabled={favLogging === fav.id}
@@ -296,8 +439,8 @@ export default function LogFoodPage() {
 
       {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-      {/* Analysis results */}
-      {analysis && (
+      {/* Analysis results — view mode */}
+      {analysis && !isEditing && (
         <div className="space-y-4">
           <div className="card space-y-3">
             <h2 className="font-semibold text-slate-200">Nutritional breakdown</h2>
@@ -320,7 +463,9 @@ export default function LogFoodPage() {
             <div className="space-y-1">
               {analysis.foods.map((f, i) => (
                 <div key={i} className="flex justify-between text-sm">
-                  <span className="text-slate-300">{f.name} <span className="text-slate-500">({f.estimated_portion})</span></span>
+                  <span className="text-slate-300">
+                    {f.name} <span className="text-slate-500">({f.estimated_portion})</span>
+                  </span>
                   <span className="text-slate-400">{f.calories} kcal</span>
                 </div>
               ))}
@@ -335,18 +480,25 @@ export default function LogFoodPage() {
           )}
 
           {!logSaved ? (
-            <button
-              onClick={saveLog}
-              disabled={saving}
-              className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold rounded-xl"
-            >
-              {saving ? "Saving..." : "Save meal log"}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={startEditing}
+                className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-slate-200 font-semibold rounded-xl"
+              >
+                Edit
+              </button>
+              <button
+                onClick={saveLog}
+                disabled={saving}
+                className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-semibold rounded-xl"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
           ) : (
             <div className="space-y-3">
               <p className="text-center text-emerald-400 text-sm font-medium">Meal logged!</p>
 
-              {/* Save as favourite buttons — one per food item */}
               <div className="space-y-2">
                 {analysis.foods.map((food, i) => {
                   const saved = savedFavIds.has(food.name);
@@ -375,6 +527,112 @@ export default function LogFoodPage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Edit mode */}
+      {analysis && isEditing && (
+        <div className="space-y-4">
+          <div className="card space-y-4">
+            <h2 className="font-semibold text-slate-200">Edit meal</h2>
+
+            {/* Editable food items */}
+            <div className="space-y-3">
+              {editedFoods.map((f, i) => (
+                <div key={i} className="bg-slate-700/50 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={f.name}
+                      onChange={(e) => updateFoodName(i, e.target.value)}
+                      className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      onClick={() => removeFood(i)}
+                      className="text-red-400 hover:text-red-300 text-xl leading-none px-1"
+                      aria-label={`Remove ${f.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 shrink-0">Portion</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={f.qty}
+                      onChange={(e) => updateQty(i, e.target.value)}
+                      className="w-20 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
+                    />
+                    {f.unit && <span className="text-slate-400 text-sm">{f.unit}</span>}
+                    <span className="ml-auto text-amber-400 text-sm font-medium">{f.calories} kcal</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add a missed food item */}
+            <div className="bg-slate-700/30 rounded-xl p-3 space-y-2 border border-dashed border-slate-600">
+              <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Add missed item</p>
+              <input
+                value={newFood.name}
+                onChange={(e) => setNewFood((p) => ({ ...p, name: e.target.value }))}
+                placeholder="Food name"
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  value={newFood.portion}
+                  onChange={(e) => setNewFood((p) => ({ ...p, portion: e.target.value }))}
+                  placeholder="Grams"
+                  className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  value={newFood.calories}
+                  onChange={(e) => setNewFood((p) => ({ ...p, calories: e.target.value }))}
+                  placeholder="kcal"
+                  className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                  onClick={addNewFood}
+                  disabled={!newFood.name.trim()}
+                  className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white text-sm font-semibold rounded-lg"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            {/* Prep method */}
+            <div className="space-y-1.5">
+              <label className="text-xs text-slate-400 font-medium uppercase tracking-wide">Prep method</label>
+              <input
+                value={editedPrepMethod}
+                onChange={(e) => setEditedPrepMethod(e.target.value)}
+                placeholder="e.g. grilled, steamed, raw"
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsEditing(false)}
+              className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-slate-400 font-semibold rounded-xl"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={applyEdits}
+              className="flex-1 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl"
+            >
+              Done
+            </button>
+          </div>
         </div>
       )}
     </div>
