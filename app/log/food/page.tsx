@@ -62,6 +62,8 @@ export default function LogFoodPage() {
 
   // Text path
   const [textDescription, setTextDescription] = useState("");
+  const [submittedDescription, setSubmittedDescription] = useState("");
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
 
   // Shared
   const [analysis, setAnalysis] = useState<FoodAnalysisResult | null>(null);
@@ -100,6 +102,8 @@ export default function LogFoodPage() {
     reader.onloadend = () => setPreview(reader.result as string);
     reader.readAsDataURL(f);
     setTextDescription("");
+    setSubmittedDescription("");
+    setIsEditingDescription(false);
   }
 
   async function analyzePhoto() {
@@ -131,6 +135,8 @@ export default function LogFoodPage() {
         body: JSON.stringify({ description: textDescription.trim() }),
       });
       if (!res.ok) throw new Error(await res.text());
+      setSubmittedDescription(textDescription.trim());
+      setIsEditingDescription(false);
       setAnalysis(await res.json());
       setLogSaved(false);
       setFile(null);
@@ -410,10 +416,26 @@ export default function LogFoodPage() {
         </button>
       )}
 
-      {/* Text description input */}
-      {!analysis && (
+      {/* Submitted description chip — shown after text analysis */}
+      {analysis && submittedDescription && !isEditingDescription && (
+        <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+          <span className="text-xs text-slate-500 shrink-0">Description</span>
+          <span className="flex-1 text-sm text-slate-300 truncate">{submittedDescription}</span>
+          <button
+            onClick={() => setIsEditingDescription(true)}
+            className="text-xs text-emerald-400 hover:text-emerald-300 shrink-0 font-medium"
+          >
+            Edit
+          </button>
+        </div>
+      )}
+
+      {/* Text description input — shown before analysis or when editing description */}
+      {(!analysis || isEditingDescription) && !file && (
         <div className="space-y-2">
-          <label className="block text-sm text-slate-400">Or describe a food item instead</label>
+          <label className="block text-sm text-slate-400">
+            {isEditingDescription ? "Edit your description" : "Or describe a food item instead"}
+          </label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -425,15 +447,25 @@ export default function LogFoodPage() {
               onKeyDown={(e) => e.key === "Enter" && analyzeText()}
               placeholder="e.g. black coffee, 2 eggs, greek yogurt"
               className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus={isEditingDescription}
             />
             <button
               onClick={analyzeText}
               disabled={loading || !textDescription.trim()}
               className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-semibold rounded-xl text-sm whitespace-nowrap"
             >
-              {loading ? "..." : "Analyse"}
+              {loading ? "..." : isEditingDescription ? "Re-analyse" : "Analyse"}
             </button>
           </div>
+          {isEditingDescription && (
+            <button
+              onClick={() => setIsEditingDescription(false)}
+              className="text-xs text-slate-500 hover:text-slate-400"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       )}
 
