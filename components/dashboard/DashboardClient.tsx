@@ -31,6 +31,7 @@ interface Props {
   todayFibre: number;
   todayWater: number;
   todayActivityMin: number;
+  todayCaloriesBurned: number;
   weeklyData: DayData[];
   todayMeals: TodayMeal[];
 }
@@ -56,13 +57,12 @@ export default function DashboardClient({
   todayFibre,
   todayWater,
   todayActivityMin,
+  todayCaloriesBurned,
   weeklyData,
   todayMeals,
 }: Props) {
   const router = useRouter();
   const [greeting, setGreeting] = useState("Good day");
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     const h = new Date().getHours();
@@ -76,24 +76,19 @@ export default function DashboardClient({
   const fibreTarget = profile?.fibre_target_g ?? 30;
   const waterTarget = profile?.water_target_ml ?? 2500;
 
-  async function handleReset() {
-    if (!confirmReset) {
-      setConfirmReset(true);
-      setTimeout(() => setConfirmReset(false), 4000);
-      return;
-    }
-    setResetting(true);
-    await fetch("/api/reset-day", { method: "POST" });
-    setResetting(false);
-    setConfirmReset(false);
-    router.refresh();
-  }
-
   const stats = [
-    { label: "Calories", value: todayCalories, max: calorieTarget, unit: "kcal", color: "#f59e0b", href: "/log/food" },
-    { label: "Protein",  value: todayProtein,  max: proteinTarget,  unit: "g",    color: "#8b5cf6", href: "/log/food" },
-    { label: "Fibre",    value: todayFibre,    max: fibreTarget,    unit: "g",    color: "#06b6d4", href: "/log/food" },
-    { label: "Water",    value: todayWater,    max: waterTarget,    unit: "ml",   color: "#3b82f6", href: "/log/water" },
+    {
+      label: "Calories",
+      value: todayCalories,
+      max: calorieTarget + todayCaloriesBurned,
+      unit: "kcal",
+      color: "#f59e0b",
+      href: "/log/food",
+      burnedBonus: todayCaloriesBurned,
+    },
+    { label: "Protein", value: todayProtein, max: proteinTarget, unit: "g",  color: "#8b5cf6", href: "/log/food",  burnedBonus: 0 },
+    { label: "Fibre",   value: todayFibre,   max: fibreTarget,   unit: "g",  color: "#06b6d4", href: "/log/food",  burnedBonus: 0 },
+    { label: "Water",   value: todayWater,   max: waterTarget,   unit: "ml", color: "#3b82f6", href: "/log/water", burnedBonus: 0 },
   ];
 
   const weekMetrics = [
@@ -136,22 +131,22 @@ export default function DashboardClient({
               />
               <span className="text-xs text-slate-400 mt-1">{s.label}</span>
               <span className="text-xs text-slate-500">{s.max}{s.unit}</span>
+              {s.burnedBonus > 0 ? (
+                <span className="text-[10px] text-emerald-400 leading-none">+{s.burnedBonus} burned</span>
+              ) : (
+                <span className="text-[10px] leading-none invisible">·</span>
+              )}
             </Link>
           ))}
         </div>
 
-        {/* Start New Day */}
+        {/* Start New Day — refreshes the view; no data is ever deleted */}
         <div className="mt-4 pt-4 border-t border-slate-700/50 flex justify-end">
           <button
-            onClick={handleReset}
-            disabled={resetting}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors disabled:opacity-50 ${
-              confirmReset
-                ? "bg-red-500/20 text-red-400 border border-red-500/40 hover:bg-red-500/30"
-                : "bg-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-600"
-            }`}
+            onClick={() => router.refresh()}
+            className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-600 transition-colors"
           >
-            {resetting ? "Resetting..." : confirmReset ? "Tap again to confirm" : "Start New Day"}
+            Start New Day
           </button>
         </div>
       </div>

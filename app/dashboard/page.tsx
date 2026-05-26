@@ -72,6 +72,7 @@ export default async function DashboardPage() {
   const todayFibre = foodLogs.reduce((s, r) => s + (r.fibre_g ?? 0), 0);
   const todayWater = (waterRes.data ?? []).reduce((s, r) => s + r.amount_ml, 0);
   const todayActivityMin = (activityRes.data ?? []).reduce((s, r) => s + r.duration_minutes, 0);
+  const todayCaloriesBurned = (activityRes.data ?? []).reduce((s, r) => s + (r.calories_burned ?? 0), 0);
 
   const todayMeals: TodayMeal[] = foodLogs.map((r) => ({
     id: r.id,
@@ -107,6 +108,7 @@ export default async function DashboardPage() {
       todayFibre={Math.round(todayFibre)}
       todayWater={todayWater}
       todayActivityMin={todayActivityMin}
+      todayCaloriesBurned={todayCaloriesBurned}
       weeklyData={weekDays}
       todayMeals={todayMeals}
     />
