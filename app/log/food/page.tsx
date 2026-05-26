@@ -20,6 +20,7 @@ interface EditableFood {
   fibrePerUnit: number;
   carbsPerUnit: number;
   fatPerUnit: number;
+  source: "exact" | "estimated";
 }
 
 function parsePortion(portion: string): { qty: number; unit: string } {
@@ -46,6 +47,7 @@ function toEditable(foods: FoodAnalysisResult["foods"]): EditableFood[] {
       fibrePerUnit: f.fibre_g / safeQty,
       carbsPerUnit: f.carbs_g / safeQty,
       fatPerUnit: f.fat_g / safeQty,
+      source: f.source ?? "estimated",
     };
   });
 }
@@ -178,6 +180,32 @@ export default function LogFoodPage() {
     );
   }
 
+  function updateMacro(
+    idx: number,
+    field: "calories" | "protein_g" | "fibre_g" | "carbs_g" | "fat_g",
+    raw: string,
+  ) {
+    const val = parseFloat(raw) || 0;
+    const perUnitKey = {
+      calories: "calsPerUnit",
+      protein_g: "proteinPerUnit",
+      fibre_g: "fibrePerUnit",
+      carbs_g: "carbsPerUnit",
+      fat_g: "fatPerUnit",
+    } as const;
+    setEditedFoods((prev) =>
+      prev.map((f, i) => {
+        if (i !== idx) return f;
+        return {
+          ...f,
+          [field]: val,
+          [perUnitKey[field]]: f.qty > 0 ? val / f.qty : val,
+          source: "exact" as const,
+        };
+      })
+    );
+  }
+
   function removeFood(idx: number) {
     setEditedFoods((prev) => prev.filter((_, i) => i !== idx));
   }
@@ -202,6 +230,7 @@ export default function LogFoodPage() {
         fibrePerUnit: 0,
         carbsPerUnit: 0,
         fatPerUnit: 0,
+        source: "exact" as const,
       },
     ]);
     setNewFood({ name: "", portion: "", calories: "" });
@@ -217,6 +246,7 @@ export default function LogFoodPage() {
       fibre_g: f.fibre_g,
       carbs_g: f.carbs_g,
       fat_g: f.fat_g,
+      source: f.source,
     }));
     const totals = editedFoods.reduce(
       (acc, f) => ({
@@ -501,10 +531,16 @@ export default function LogFoodPage() {
             <div className="space-y-1">
               {analysis.foods.map((f, i) => (
                 <div key={i} className="flex justify-between text-sm">
-                  <span className="text-slate-300">
-                    {f.name} <span className="text-slate-500">({f.estimated_portion})</span>
+                  <span className="text-slate-300 flex items-center gap-1 flex-wrap">
+                    {f.name}
+                    <span className="text-slate-500">({f.estimated_portion})</span>
+                    {f.source === "exact" ? (
+                      <span className="text-[10px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded px-1 py-0.5 leading-none">Label</span>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 bg-slate-700/60 rounded px-1 py-0.5 leading-none">Est.</span>
+                    )}
                   </span>
-                  <span className="text-slate-400">{f.calories} kcal</span>
+                  <span className="text-slate-400 shrink-0 ml-2">{f.calories} kcal</span>
                 </div>
               ))}
             </div>
@@ -603,7 +639,36 @@ export default function LogFoodPage() {
                       className="w-20 bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
                     />
                     {f.unit && <span className="text-slate-400 text-sm">{f.unit}</span>}
-                    <span className="ml-auto text-amber-400 text-sm font-medium">{f.calories} kcal</span>
+                    <span className="ml-auto shrink-0">
+                      {f.source === "exact" ? (
+                        <span className="text-[10px] text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded px-1.5 py-0.5 leading-none">Label</span>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 bg-slate-700/60 rounded px-1.5 py-0.5 leading-none">Est.</span>
+                      )}
+                    </span>
+                  </div>
+                  {/* Direct macro editing — editing any value marks the item as exact */}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {([
+                      { key: "calories" as const, label: "Cal", unit: "kcal", color: "text-amber-400" },
+                      { key: "protein_g" as const, label: "Pro", unit: "g", color: "text-purple-400" },
+                      { key: "carbs_g" as const, label: "Carb", unit: "g", color: "text-green-400" },
+                      { key: "fat_g" as const, label: "Fat", unit: "g", color: "text-orange-400" },
+                      { key: "fibre_g" as const, label: "Fib", unit: "g", color: "text-cyan-400" },
+                    ] as const).map(({ key, label, unit, color }) => (
+                      <div key={key} className="flex flex-col items-center gap-0.5">
+                        <span className={`text-[10px] ${color}`}>{label}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={f[key]}
+                          onChange={(e) => updateMacro(i, key, e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-600 rounded-lg px-1 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 text-center"
+                        />
+                        <span className="text-[10px] text-slate-600">{unit}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
